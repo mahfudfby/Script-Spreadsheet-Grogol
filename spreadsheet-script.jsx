@@ -1,14 +1,16 @@
 /**
  * ============================================================================
- * MASTER SCRIPT V.12 (FINAL FIX - ANTI GHOSTING DATA)
- * Perbaikan: Filter "SUB-TOTAL" diperluas ke Kolom B, C, dan D agar tidak bocor.
+ * MASTER SCRIPT V.12 (PT Varia Indo Pangan)
+ * Karya : MAHFUD FEBRY S
  * ============================================================================
  */
 
 function onOpen() {
   var ui = SpreadsheetApp.getUi();
   ui.createMenu(' [MAHFUD - ADMIN MENU]')
-      .addItem('📱 Generate Laporan WA', 'generateWALaporan') 
+      .addItem('📱 Generate Laporan WA', 'generateWALaporan')
+      .addItem('📱 Laporan Kilat Boss (Teks)', 'generateLaporanBoss')
+      .addItem('📱 Rekap Produksi', 'generateRekapProduksi') 
       .addItem('💡 Cek Insight Hari Ini', 'showDailyInsights')
       .addSeparator()
       .addItem('📊 Buat Rekap Bulanan', 'generateMonthlyRecap')
@@ -406,4 +408,196 @@ function hidePastSheets() {
     if (!isNaN(name) && parseInt(name) < today) { allSheets[i].hideSheet(); }
   }
   SpreadsheetApp.getUi().alert('🙈 Sheet lama disembunyikan.');
+}
+
+function generateLaporanBoss() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("DASHBOARD"); // Pastikan nama sheet sesuai
+  
+  // --- BAGIAN 1: MENGAMBIL DATA UTAMA ---
+  // Sesuaikan koordinat cell (Baris, Kolom) dengan posisi TOTAL di sheet Anda
+  // Asumsi berdasarkan Gambar 2: Baris Total ada di baris 34 (atau baris paling bawah)
+  
+  var lastRow = sheet.getLastRow(); // Mendeteksi baris terakhir otomatis
+  
+  // Ambil Total Terjual (Misal Kolom O, baris terakhir)
+  var totalTerjual = sheet.getRange("O" + lastRow).getValue();
+  
+  // Ambil Total Omset (Misal Kolom P, baris terakhir)
+  var totalOmset = sheet.getRange("P" + lastRow).getValue();
+  
+  // Ambil Total Profit (Misal Kolom S, baris terakhir)
+  var totalProfit = sheet.getRange("S" + lastRow).getValue();
+
+  // --- BAGIAN 2: MENCARI PRODUK TERLARIS (Opsional tapi Boss suka) ---
+  var rangeNama = sheet.getRange("C7:C30").getValues(); // Kolom Nama Produk
+  var rangeJual = sheet.getRange("O7:O30").getValues(); // Kolom Terjual
+  
+  var maxJual = 0;
+  var produkLaris = "";
+  
+  for (var i = 0; i < rangeJual.length; i++) {
+    if (rangeJual[i][0] > maxJual) {
+      maxJual = rangeJual[i][0];
+      produkLaris = rangeNama[i][0];
+    }
+  }
+
+  // --- BAGIAN 3: FORMATTING RUPIAH ---
+  var IDR = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' });
+  
+  // --- BAGIAN 4: MENYUSUN PESAN WA ---
+  var bulan = "Januari 2026"; // Bisa dibuat dinamis mengambil dari cell header
+  
+  var pesan = "*LAPORAN KILAT PRODUKSI & SALES* 🚀\n";
+  pesan += "🗓 Periode: " + bulan + "\n";
+  pesan += "----------------------------------\n";
+  pesan += "📦 Total Item Terjual: *" + totalTerjual + " Pcs*\n";
+  pesan += "🏆 Produk Terlaris: *" + produkLaris + "* (" + maxJual + " Pcs)\n";
+  pesan += "----------------------------------\n";
+  pesan += "💰 *TOTAL OMSET: " + IDR.format(totalOmset) + "*\n";
+  pesan += "💵 *TOTAL PROFIT: " + IDR.format(totalProfit) + "*\n";
+  pesan += "----------------------------------\n";
+  pesan += "_Laporan ini digenerate otomatis dari sistem._";
+
+  // --- BAGIAN 5: OUTPUT (PILIH SALAH SATU) ---
+  
+  // OPSI A: Tampilkan di layar (Pop-up) untuk di-copy paste manual
+  SpreadsheetApp.getUi().alert(pesan);
+  
+  // OPSI B: Jika Anda punya fungsi kirim WA (API), panggil di sini
+  // kirimWAKepadaBoss(pesan); 
+  
+  Logger.log(pesan); // Untuk cek di log
+  return pesan;
+}
+
+function generateRekapProduksi() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("DASHBOARD");
+  
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert("❌ Error: Sheet 'DASHBOARD' tidak ditemukan!");
+    return;
+  }
+
+  // --- [SETTING] MASUKKAN NOMOR WA DEFAULT (UTAMA) ---
+  // Ini adalah nomor yang akan muncul otomatis pertama kali
+  var nomorWAPos = "628xxxxxxxxxx"; 
+  
+  // --- BAGIAN 1: AMBIL DATA PERIODE (DARI CELL C2) ---
+  var periode = sheet.getRange("C2").getDisplayValue();
+  
+  if (periode === "") {
+    var now = new Date();
+    var bulanIndo = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+    periode = bulanIndo[now.getMonth()] + " " + now.getFullYear();
+  }
+
+  // --- BAGIAN 2: DATA UTAMA ---
+  var lastRow = sheet.getLastRow(); 
+  var totalTerjual = sheet.getRange("O" + lastRow).getValue();
+  var totalOmset = sheet.getRange("P" + lastRow).getValue();
+  var totalProfit = sheet.getRange("S" + lastRow).getValue();
+
+  // --- BAGIAN 3: LOGIKA PENGGABUNGAN NAMA PRODUK ---
+  var limitBaris = lastRow - 1;
+  var dataRange = sheet.getRange("C7:O" + limitBaris).getValues(); 
+  
+  var productSummary = {}; 
+  var lastProductName = ""; 
+
+  for (var i = 0; i < dataRange.length; i++) {
+    var rowName = dataRange[i][0]; 
+    var rowQty = dataRange[i][12]; 
+    
+    if (rowName !== "" && rowName != null) {
+      lastProductName = rowName; 
+    }
+    
+    var finalName = lastProductName;
+    var qty = (typeof rowQty === 'number') ? rowQty : 0;
+
+    if (productSummary[finalName]) {
+      productSummary[finalName] += qty;
+    } else {
+      productSummary[finalName] = qty;
+    }
+  }
+
+  // --- BAGIAN 4: MENYUSUN LIST PRODUK ---
+  var breakdownText = "";
+  for (var key in productSummary) {
+    if (productSummary[key] > 0) {
+      breakdownText += "• " + key + ": " + productSummary[key] + " Pcs\n";
+    }
+  }
+
+  // --- BAGIAN 5: FORMATTING ---
+  var IDR = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 });
+
+  // --- BAGIAN 6: MENYUSUN PESAN FINAL ---
+  var pesan = "*REKAP PRODUKSI* 🚀\n";
+  pesan += "🗓 Periode: " + periode + "\n";
+  pesan += "----------------------------------\n";
+  pesan += "*RINCIAN ITEM TERJUAL:*\n";
+  pesan += breakdownText; 
+  pesan += "----------------------------------\n";
+  pesan += "📦 TOTAL ITEM: *" + totalTerjual + " Pcs*\n";
+  pesan += "💰 OMSET: *" + IDR.format(totalOmset) + "*\n";
+  pesan += "💵 PROFIT: *" + IDR.format(totalProfit) + "*\n";
+  pesan += "----------------------------------\n";
+  pesan += "_Auto-generated by System_";
+
+  // --- BAGIAN 7: POP-UP DENGAN FORM INPUT NOMOR ---
+  
+  // Kita menggunakan HTML Template dengan Script di dalamnya (Client-side Script)
+  var htmlOutput = HtmlService.createHtmlOutput(
+    '<html>' +
+    '<head>' +
+    '<style>' +
+      'body { font-family: sans-serif; padding: 15px; text-align: center; color: #333; }' +
+      'textarea { width: 100%; height: 200px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: 12px; box-sizing: border-box; }' +
+      '.input-group { margin-top: 15px; text-align: left; background: #f1f1f1; padding: 10px; border-radius: 8px; }' +
+      'label { font-weight: bold; font-size: 13px; display: block; margin-bottom: 5px; }' +
+      'input[type="text"] { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; box-sizing: border-box; }' +
+      '.btn { cursor: pointer; display: block; width: 100%; background-color: #25D366; color: white; padding: 12px; text-decoration: none; border-radius: 50px; font-weight: bold; margin-top: 15px; font-size: 16px; border: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: background 0.3s; }' +
+      '.btn:hover { background-color: #128C7E; box-shadow: 0 6px 8px rgba(0,0,0,0.2); }' +
+      '.note { font-size: 11px; color: #666; margin-top: 5px; }' +
+    '</style>' +
+    '</head>' +
+    '<body>' +
+      // Area Text Pesan
+      '<div style="text-align:left; font-size:13px; margin-bottom:5px;">👇 Cek isi pesan:</div>' +
+      '<textarea id="pesanBox">' + pesan + '</textarea>' +
+      
+      // Area Input Nomor WA
+      '<div class="input-group">' +
+        '<label>📱 Kirim ke Nomor WA:</label>' +
+        '<input type="text" id="nomorWA" value="' + nomorWAPos + '" placeholder="Contoh: 62812345678">' +
+        '<div class="note">*Gunakan kode negara (62) tanpa tanda plus (+)</div>' +
+      '</div>' +
+
+      // Tombol Kirim (Sekarang menjalankan Fungsi JS, bukan Link biasa)
+      '<button class="btn" onclick="kirimSekarang()">🚀 Kirim Rekap ke WA</button>' +
+
+      // Script Javascript untuk menangani Klik Tombol
+      '<script>' +
+        'function kirimSekarang() {' +
+          'var pesan = document.getElementById("pesanBox").value;' +
+          'var nomor = document.getElementById("nomorWA").value;' +
+          // Validasi sederhana
+          'if(nomor === "") { alert("Nomor WA tidak boleh kosong!"); return; }' +
+          // Encode dan Buka Link
+          'var url = "https://wa.me/" + nomor + "?text=" + encodeURIComponent(pesan);' +
+          'window.open(url, "_blank");' +
+          // Opsional: Tutup pop-up setelah kirim (hapus baris bawah jika ingin pop-up tetap terbuka)
+          'google.script.host.close();' +
+        '}' +
+      '</script>' +
+    '</body>' +
+    '</html>'
+  )
+  .setWidth(400)
+  .setHeight(480); // Tinggi ditambah sedikit agar muat form input
+
+  SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'Rekap Produksi Siap Kirim');
 }
